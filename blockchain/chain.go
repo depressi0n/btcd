@@ -595,7 +595,8 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	blockWeight := uint64(GetBlockWeight(block))
 	state := newBestState(node, blockSize, blockWeight, numTxns,
 		curTotalTxns+numTxns, node.CalcPastMedianTime())
-
+	var utxoSetSize uint64
+	// 以区块为单位更新数据库，此时数据库中的信息保证了正确性
 	// Atomically insert info into the database.
 	err = b.db.Update(func(dbTx database.Tx) error {
 		// Update best block state.
@@ -618,7 +619,7 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 		if err != nil {
 			return err
 		}
-
+		utxoSetSize = dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
 		// Update the transaction spend journal by adding a record for
 		// the block that contains all txos spent by it.
 		err = dbPutSpendJournalEntry(dbTx, block.Hash(), stxos)
@@ -641,7 +642,7 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	if err != nil {
 		return err
 	}
-
+	log.Infof("At height %d, the UTXO set size is %d.", block.Height(), utxoSetSize)
 	// Prune fully spent entries and mark all entries in the view unmodified
 	// now that the modifications have been committed to the database.
 	view.commit()
@@ -1097,6 +1098,7 @@ func (b *BlockChain) connectBestChain(node *blockNode, block *btcutil.Block, fla
 		// actually connecting the block.
 		view := NewUtxoViewpoint()
 		view.SetBestHash(parentHash)
+		// 消费多少个UTXO
 		stxos := make([]SpentTxOut, 0, countSpentOutputs(block))
 		if !fastAdd {
 			err := b.checkConnectBlock(node, block, view, &stxos)
@@ -1124,6 +1126,7 @@ func (b *BlockChain) connectBestChain(node *blockNode, block *btcutil.Block, fla
 			if err != nil {
 				return false, err
 			}
+			// 将区块中的交易添加到UTXO set上，并记录本区块的STXO set
 			err = view.connectTransactions(block, &stxos)
 			if err != nil {
 				return false, err

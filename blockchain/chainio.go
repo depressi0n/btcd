@@ -63,6 +63,8 @@ var (
 	// version of the utxo set currently in the database.
 	utxoSetVersionKeyName = []byte("utxosetversion")
 
+	utxoSetSizeKeyName = []byte("utxosetsize")
+
 	// utxoSetBucketName is the name of the db bucket used to house the
 	// unspent transaction output set.
 	utxoSetBucketName = []byte("utxosetv2")
@@ -122,6 +124,14 @@ func dbFetchVersion(dbTx database.Tx, key []byte) uint32 {
 
 	return byteOrder.Uint32(serialized)
 }
+func dbFetchUTXOSetSize(dbTx database.Tx, key []byte) uint64 {
+	serialized := dbTx.Metadata().Get(key)
+	if serialized == nil {
+		return 0
+	}
+
+	return byteOrder.Uint64(serialized)
+}
 
 // dbPutVersion uses an existing database transaction to update the provided
 // key in the metadata bucket to the given version.  It is primarily used to
@@ -129,6 +139,11 @@ func dbFetchVersion(dbTx database.Tx, key []byte) uint32 {
 func dbPutVersion(dbTx database.Tx, key []byte, version uint32) error {
 	var serialized [4]byte
 	byteOrder.PutUint32(serialized[:], version)
+	return dbTx.Metadata().Put(key, serialized[:])
+}
+func dbPutUTXOSetSize(dbTx database.Tx, key []byte, size uint64) error {
+	var serialized [8]byte
+	byteOrder.PutUint64(serialized[:], size)
 	return dbTx.Metadata().Put(key, serialized[:])
 }
 
@@ -772,6 +787,8 @@ func dbFetchUtxoEntry(dbTx database.Tx, outpoint wire.OutPoint) (*UtxoEntry, err
 // to the database.
 func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 	utxoBucket := dbTx.Metadata().Bucket(utxoSetBucketName)
+	utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+
 	for outpoint, entry := range view.entries {
 		// No need to update the database if the entry was not modified.
 		if entry == nil || !entry.isModified() {
@@ -783,6 +800,7 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 			key := outpointKey(outpoint)
 			err := utxoBucket.Delete(*key)
 			recycleOutpointKey(key)
+			utxoSetSize -= 8 + uint64(len(entry.PkScript()))
 			if err != nil {
 				return err
 			}
@@ -791,12 +809,14 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		}
 
 		// Serialize and store the utxo entry.
+		// 在这里要更新数据
 		serialized, err := serializeUtxoEntry(entry)
 		if err != nil {
 			return err
 		}
 		key := outpointKey(outpoint)
 		err = utxoBucket.Put(*key, serialized)
+		utxoSetSize += 8 + uint64(len(entry.PkScript()))
 		// NOTE: The key is intentionally not recycled here since the
 		// database interface contract prohibits modifications.  It will
 		// be garbage collected normally when the database is done with
@@ -804,6 +824,11 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		if err != nil {
 			return err
 		}
+	}
+	// 更新
+	err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -1004,6 +1029,8 @@ func dbPutBestState(dbTx database.Tx, snapshot *BestState, workSum *big.Int) err
 // the genesis block, so it must only be called on an uninitialized database.
 func (b *BlockChain) createChainState() error {
 	// Create a new node from the genesis block and set it as the best node.
+	// 从创世区块开始创建链的状态
+	log.Infof("initialize genesis block at %v", time.Now())
 	genesisBlock := btcutil.NewBlock(b.chainParams.GenesisBlock)
 	genesisBlock.SetHeight(0)
 	header := &genesisBlock.MsgBlock().Header
@@ -1055,6 +1082,8 @@ func (b *BlockChain) createChainState() error {
 		}
 		err = dbPutVersion(dbTx, utxoSetVersionKeyName,
 			latestUtxoSetBucketVersion)
+		err = dbPutUTXOSetSize(dbTx, utxoSetVersionKeyName,
+			0)
 		if err != nil {
 			return err
 		}

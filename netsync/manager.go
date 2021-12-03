@@ -320,6 +320,8 @@ func (sm *SyncManager) startSync() {
 		bestPeer = higherPeers[rand.Intn(len(higherPeers))]
 
 	case len(equalPeers) > 0:
+		// 如果没有比自己更高的Peer，说明已经同步到最新状态
+		log.Infof("Sync to the best state of blockchain with %d block at %v",sm.chain.BestSnapshot().Height,time.Now())
 		bestPeer = equalPeers[rand.Intn(len(equalPeers))]
 	}
 
