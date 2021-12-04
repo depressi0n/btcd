@@ -64,9 +64,9 @@ var (
 	utxoSetVersionKeyName = []byte("utxosetversion")
 
 	// START:FOR TEST BY OSY
-	//utxoSetSizeKeyName = []byte("utxosetsize")
+	utxoSetSizeKeyName = []byte("utxosetsize")
 
-	//utxoSetNumKeyName = []byte("utxosetnum")
+	utxoSetNumKeyName = []byte("utxosetnum")
 	// END:FOR TEST BY OSY
 
 	// utxoSetBucketName is the name of the db bucket used to house the
@@ -804,8 +804,8 @@ func dbFetchUtxoEntry(dbTx database.Tx, outpoint wire.OutPoint) (*UtxoEntry, err
 func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 	utxoBucket := dbTx.Metadata().Bucket(utxoSetBucketName)
 	// START:FOR TEST BY OSY
-	//utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
-	//utxoSetNum := dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
+	utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+	utxoSetNum := dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
 	// END:FOR TEST BY OSY
 
 	for outpoint, entry := range view.entries {
@@ -817,13 +817,18 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		// Remove the utxo entry if it is spent.
 		if entry.IsSpent() {
 			key := outpointKey(outpoint)
+			tmp:=utxoBucket.Get(*key)
+			if tmp!=nil{
+				utxoSetSize -= 8 + uint64(len(entry.PkScript()))
+				utxoSetNum -= 1
+			}
 			err := utxoBucket.Delete(*key)
 			recycleOutpointKey(key)
 			if err != nil {
 				return err
 			}
 			// START:FOR TEST BY OSY
-			log.Info("delete UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
+			//log.Info("delete UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
 			//utxoSetSize -= 8 + uint64(len(entry.PkScript()))
 			//utxoSetNum -= 1
 			// END:FOR TEST BY OSY
@@ -846,23 +851,23 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 			return err
 		}
 		// START:FOR TEST BY OSY
-		log.Info("Insert UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
-		//utxoSetSize += 8 + uint64(len(entry.PkScript()))
-		//utxoSetNum += 1
+		//log.Info("Insert UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
+		utxoSetSize += 8 + uint64(len(entry.PkScript()))
+		utxoSetNum += 1
 		// END:FOR TEST BY OSY
 	}
 	// START:FOR TEST BY OSY
 
 	// 更新
-	//err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName, utxoSetNum)
-	//if err != nil {
-	//	return err
-	//}
+	err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
+	if err != nil {
+		return err
+	}
+
+	err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName, utxoSetNum)
+	if err != nil {
+		return err
+	}
 	// END:FOR TEST BY OSY
 	return nil
 }
@@ -1117,16 +1122,16 @@ func (b *BlockChain) createChainState() error {
 			latestUtxoSetBucketVersion)
 		// START:FOR TEST BY OSY
 		// 默认初始为0
-		//err = dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName,
-		//	0)
-		//if err != nil {
-		//	return err
-		//}
-		//err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName,
-		//	0)
-		//if err != nil {
-		//	return err
-		//}
+		err = dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName,
+			0)
+		if err != nil {
+			return err
+		}
+		err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName,
+			0)
+		if err != nil {
+			return err
+		}
 		// END:FOR TEST BY OSY
 
 

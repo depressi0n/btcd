@@ -596,7 +596,7 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	state := newBestState(node, blockSize, blockWeight, numTxns,
 		curTotalTxns+numTxns, node.CalcPastMedianTime())
 	// START:FOR TEST BY OSY
-	//var utxoSetSize uint64
+	var utxoSetSize, utxoSetNum uint64
 	// END:FOR TEST BY OSY
 
 	// 以区块为单位更新数据库，此时数据库中的信息保证了正确性
@@ -624,7 +624,8 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 		}
 
 		// START:FOR TEST BY OSY
-		//utxoSetSize = dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+		utxoSetSize = dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+		utxoSetNum = dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
 		// END:FOR TEST BY OSY
 
 		// Update the transaction spend journal by adding a record for
@@ -651,7 +652,7 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	}
 
 	// START:FOR TEST BY OSY
-	//log.Infof("At height %d, the UTXO set size is %d.", block.Height(), utxoSetSize)
+	log.Infof("At height %d, the UTXO set size is %d with storage occupy %d", block.Height(), utxoSetNum, utxoSetSize)
 	// END:FOR TEST BY OSY
 
 	// Prune fully spent entries and mark all entries in the view unmodified
