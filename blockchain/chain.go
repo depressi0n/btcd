@@ -595,7 +595,10 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	blockWeight := uint64(GetBlockWeight(block))
 	state := newBestState(node, blockSize, blockWeight, numTxns,
 		curTotalTxns+numTxns, node.CalcPastMedianTime())
-	var utxoSetSize uint64
+	// START:FOR TEST BY OSY
+	//var utxoSetSize uint64
+	// END:FOR TEST BY OSY
+
 	// 以区块为单位更新数据库，此时数据库中的信息保证了正确性
 	// Atomically insert info into the database.
 	err = b.db.Update(func(dbTx database.Tx) error {
@@ -619,7 +622,11 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 		if err != nil {
 			return err
 		}
-		utxoSetSize = dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+
+		// START:FOR TEST BY OSY
+		//utxoSetSize = dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+		// END:FOR TEST BY OSY
+
 		// Update the transaction spend journal by adding a record for
 		// the block that contains all txos spent by it.
 		err = dbPutSpendJournalEntry(dbTx, block.Hash(), stxos)
@@ -642,7 +649,11 @@ func (b *BlockChain) connectBlock(node *blockNode, block *btcutil.Block,
 	if err != nil {
 		return err
 	}
-	log.Infof("At height %d, the UTXO set size is %d.", block.Height(), utxoSetSize)
+
+	// START:FOR TEST BY OSY
+	//log.Infof("At height %d, the UTXO set size is %d.", block.Height(), utxoSetSize)
+	// END:FOR TEST BY OSY
+
 	// Prune fully spent entries and mark all entries in the view unmodified
 	// now that the modifications have been committed to the database.
 	view.commit()

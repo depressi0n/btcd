@@ -63,9 +63,11 @@ var (
 	// version of the utxo set currently in the database.
 	utxoSetVersionKeyName = []byte("utxosetversion")
 
-	utxoSetSizeKeyName = []byte("utxosetsize")
+	// START:FOR TEST BY OSY
+	//utxoSetSizeKeyName = []byte("utxosetsize")
 
-	utxoSetNumKeyName = []byte("utxosetnum")
+	//utxoSetNumKeyName = []byte("utxosetnum")
+	// END:FOR TEST BY OSY
 
 	// utxoSetBucketName is the name of the db bucket used to house the
 	// unspent transaction output set.
@@ -801,8 +803,10 @@ func dbFetchUtxoEntry(dbTx database.Tx, outpoint wire.OutPoint) (*UtxoEntry, err
 // to the database.
 func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 	utxoBucket := dbTx.Metadata().Bucket(utxoSetBucketName)
-	utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
-	utxoSetNum := dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
+	// START:FOR TEST BY OSY
+	//utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+	//utxoSetNum := dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
+	// END:FOR TEST BY OSY
 
 	for outpoint, entry := range view.entries {
 		// No need to update the database if the entry was not modified.
@@ -818,8 +822,11 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 			if err != nil {
 				return err
 			}
-			utxoSetSize -= 8 + uint64(len(entry.PkScript()))
-			utxoSetNum -= 1
+			// START:FOR TEST BY OSY
+			log.Info("delete UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
+			//utxoSetSize -= 8 + uint64(len(entry.PkScript()))
+			//utxoSetNum -= 1
+			// END:FOR TEST BY OSY
 			continue
 		}
 
@@ -831,8 +838,6 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		}
 		key := outpointKey(outpoint)
 		err = utxoBucket.Put(*key, serialized)
-		utxoSetSize += 8 + uint64(len(entry.PkScript()))
-		utxoSetNum += 1
 		// NOTE: The key is intentionally not recycled here since the
 		// database interface contract prohibits modifications.  It will
 		// be garbage collected normally when the database is done with
@@ -840,18 +845,25 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		if err != nil {
 			return err
 		}
+		// START:FOR TEST BY OSY
+		log.Info("Insert UTXO with TxHash %v, Index %d, Size %d", outpoint.Hash, outpoint.Index, len(entry.PkScript()))
+		//utxoSetSize += 8 + uint64(len(entry.PkScript()))
+		//utxoSetNum += 1
+		// END:FOR TEST BY OSY
 	}
+	// START:FOR TEST BY OSY
+
 	// 更新
-	err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
-	if err != nil {
-		return err
-	}
-
-	err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName, utxoSetNum)
-	if err != nil {
-		return err
-	}
-
+	//err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
+	//if err != nil {
+	//	return err
+	//}
+	//
+	//err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName, utxoSetNum)
+	//if err != nil {
+	//	return err
+	//}
+	// END:FOR TEST BY OSY
 	return nil
 }
 
@@ -1103,17 +1115,20 @@ func (b *BlockChain) createChainState() error {
 		}
 		err = dbPutVersion(dbTx, utxoSetVersionKeyName,
 			latestUtxoSetBucketVersion)
+		// START:FOR TEST BY OSY
 		// 默认初始为0
-		err = dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName,
-			0)
-		if err != nil {
-			return err
-		}
-		err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName,
-			0)
-		if err != nil {
-			return err
-		}
+		//err = dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName,
+		//	0)
+		//if err != nil {
+		//	return err
+		//}
+		//err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName,
+		//	0)
+		//if err != nil {
+		//	return err
+		//}
+		// END:FOR TEST BY OSY
+
 
 		// Create the bucket that houses the utxo set and store its
 		// version.  Note that the genesis block coinbase transaction is
