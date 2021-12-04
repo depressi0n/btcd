@@ -1134,6 +1134,7 @@ func (b *BlockChain) connectBestChain(node *blockNode, block *btcutil.Block, fla
 		}
 
 		// Connect the block to the main chain.
+		// 这里就开始更新数据库，所以要统计数据应该在这里统计
 		err := b.connectBlock(node, block, view, stxos)
 		if err != nil {
 			// If we got hit with a rule error, then we'll mark

@@ -65,6 +65,8 @@ var (
 
 	utxoSetSizeKeyName = []byte("utxosetsize")
 
+	utxoSetNumKeyName = []byte("utxosetnum")
+
 	// utxoSetBucketName is the name of the db bucket used to house the
 	// unspent transaction output set.
 	utxoSetBucketName = []byte("utxosetv2")
@@ -132,6 +134,13 @@ func dbFetchUTXOSetSize(dbTx database.Tx, key []byte) uint64 {
 
 	return byteOrder.Uint64(serialized)
 }
+func dbFetchUTXOSetNum(dbTx database.Tx, key []byte) uint64 {
+	serialized := dbTx.Metadata().Get(key)
+	if serialized == nil {
+		return 0
+	}
+	return byteOrder.Uint64(serialized)
+}
 
 // dbPutVersion uses an existing database transaction to update the provided
 // key in the metadata bucket to the given version.  It is primarily used to
@@ -144,6 +153,11 @@ func dbPutVersion(dbTx database.Tx, key []byte, version uint32) error {
 func dbPutUTXOSetSize(dbTx database.Tx, key []byte, size uint64) error {
 	var serialized [8]byte
 	byteOrder.PutUint64(serialized[:], size)
+	return dbTx.Metadata().Put(key, serialized[:])
+}
+func dbPutUTXOSetNum(dbTx database.Tx, key []byte, num uint64) error {
+	var serialized [8]byte
+	byteOrder.PutUint64(serialized[:], num)
 	return dbTx.Metadata().Put(key, serialized[:])
 }
 
@@ -788,6 +802,7 @@ func dbFetchUtxoEntry(dbTx database.Tx, outpoint wire.OutPoint) (*UtxoEntry, err
 func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 	utxoBucket := dbTx.Metadata().Bucket(utxoSetBucketName)
 	utxoSetSize := dbFetchUTXOSetSize(dbTx, utxoSetSizeKeyName)
+	utxoSetNum := dbFetchUTXOSetNum(dbTx, utxoSetNumKeyName)
 
 	for outpoint, entry := range view.entries {
 		// No need to update the database if the entry was not modified.
@@ -800,11 +815,11 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 			key := outpointKey(outpoint)
 			err := utxoBucket.Delete(*key)
 			recycleOutpointKey(key)
-			utxoSetSize -= 8 + uint64(len(entry.PkScript()))
 			if err != nil {
 				return err
 			}
-
+			utxoSetSize -= 8 + uint64(len(entry.PkScript()))
+			utxoSetNum -= 1
 			continue
 		}
 
@@ -817,6 +832,7 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		key := outpointKey(outpoint)
 		err = utxoBucket.Put(*key, serialized)
 		utxoSetSize += 8 + uint64(len(entry.PkScript()))
+		utxoSetNum += 1
 		// NOTE: The key is intentionally not recycled here since the
 		// database interface contract prohibits modifications.  It will
 		// be garbage collected normally when the database is done with
@@ -827,6 +843,11 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 	}
 	// 更新
 	err := dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName, utxoSetSize)
+	if err != nil {
+		return err
+	}
+
+	err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName, utxoSetNum)
 	if err != nil {
 		return err
 	}
@@ -1082,7 +1103,13 @@ func (b *BlockChain) createChainState() error {
 		}
 		err = dbPutVersion(dbTx, utxoSetVersionKeyName,
 			latestUtxoSetBucketVersion)
-		err = dbPutUTXOSetSize(dbTx, utxoSetVersionKeyName,
+		// 默认初始为0
+		err = dbPutUTXOSetSize(dbTx, utxoSetSizeKeyName,
+			0)
+		if err != nil {
+			return err
+		}
+		err = dbPutUTXOSetNum(dbTx, utxoSetNumKeyName,
 			0)
 		if err != nil {
 			return err
