@@ -817,8 +817,8 @@ func dbPutUtxoView(dbTx database.Tx, view *UtxoViewpoint) error {
 		// Remove the utxo entry if it is spent.
 		if entry.IsSpent() {
 			key := outpointKey(outpoint)
-			tmp:=utxoBucket.Get(*key)
-			if tmp!=nil{
+			tmp := utxoBucket.Get(*key)
+			if tmp != nil {
 				utxoSetSize -= 8 + uint64(len(entry.PkScript()))
 				utxoSetNum -= 1
 			}
@@ -961,6 +961,10 @@ func dbFetchHashByHeight(dbTx database.Tx, height int32) (*chainhash.Hash, error
 	return &hash, nil
 }
 
+func DBFetchHashByHeight(dbTx database.Tx, height int32) (*chainhash.Hash, error) {
+	return dbFetchHashByHeight(dbTx, height)
+}
+
 // -----------------------------------------------------------------------------
 // The best chain state consists of the best block hash and height, the total
 // number of transactions up to and including those in the best block, and the
@@ -985,6 +989,22 @@ type bestChainState struct {
 	height    uint32
 	totalTxns uint64
 	workSum   *big.Int
+}
+
+func (b bestChainState) Hash() chainhash.Hash {
+	return b.hash
+}
+
+func (b bestChainState) Height() uint32 {
+	return b.height
+}
+
+func (b bestChainState) TotalTxns() uint64 {
+	return b.totalTxns
+}
+
+func (b bestChainState) WorkSum() *big.Int {
+	return b.workSum
 }
 
 // serializeBestChainState returns the serialization of the passed block best
@@ -1045,6 +1065,9 @@ func deserializeBestChainState(serializedData []byte) (bestChainState, error) {
 	state.workSum = new(big.Int).SetBytes(workSumBytes)
 
 	return state, nil
+}
+func DeserializeBestChainState(serializedData []byte) (bestChainState, error) {
+	return deserializeBestChainState(serializedData)
 }
 
 // dbPutBestState uses an existing database transaction to update the best chain
@@ -1134,7 +1157,6 @@ func (b *BlockChain) createChainState() error {
 		}
 		// END:FOR TEST BY OSY
 
-
 		// Create the bucket that houses the utxo set and store its
 		// version.  Note that the genesis block coinbase transaction is
 		// intentionally not inserted here since it is not spendable by
@@ -1172,6 +1194,9 @@ func (b *BlockChain) createChainState() error {
 		return dbStoreBlock(dbTx, genesisBlock)
 	})
 	return err
+}
+func (b *BlockChain) InitChainState() error {
+	return b.initChainState()
 }
 
 // initChainState attempts to load and initialize the chain state from the
@@ -1365,6 +1390,15 @@ func dbFetchHeaderByHash(dbTx database.Tx, hash *chainhash.Hash) (*wire.BlockHea
 // dbFetchHeaderByHeight uses an existing database transaction to retrieve the
 // block header for the provided height.
 func dbFetchHeaderByHeight(dbTx database.Tx, height int32) (*wire.BlockHeader, error) {
+	hash, err := dbFetchHashByHeight(dbTx, height)
+	if err != nil {
+		return nil, err
+	}
+
+	return dbFetchHeaderByHash(dbTx, hash)
+}
+
+func DBFetchHeaderByHeight(dbTx database.Tx, height int32) (*wire.BlockHeader, error) {
 	hash, err := dbFetchHashByHeight(dbTx, height)
 	if err != nil {
 		return nil, err

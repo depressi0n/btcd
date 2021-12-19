@@ -5,6 +5,9 @@
 package main
 
 import (
+	"fmt"
+	"github.com/btcsuite/btcutil"
+	"github.com/jrick/logrotate/rotator"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,11 +59,43 @@ func loadBlockDB() (database.DB, error) {
 	return db, nil
 }
 
+// logWriter implements an io.Writer that outputs to both standard output and
+// the write-end pipe of an initialized log rotator.
+type logWriter struct{}
+
+var logRotator *rotator.Rotator
+
+func (logWriter) Write(p []byte) (n int, err error) {
+	os.Stdout.Write(p)
+	logRotator.Write(p)
+	return len(p), nil
+}
+
+func initLogRotator(logFile string) {
+	logDir, _ := filepath.Split(logFile)
+	err := os.MkdirAll(logDir, 0700)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create log directory: %v\n", err)
+		os.Exit(1)
+	}
+	//r, err := rotator.New(logFile, 10*1024, false, 3)
+	// 不删除日志文件
+	r, err := rotator.New(logFile, 10*1024, false, 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create file rotator: %v\n", err)
+		os.Exit(1)
+	}
+
+	logRotator = r
+}
+
 // realMain is the real main function for the utility.  It is necessary to work
 // around the fact that deferred functions do not run when os.Exit() is called.
 func realMain() error {
 	// Setup logging.
-	backendLogger := btclog.NewBackend(os.Stdout)
+	defaultLogDir := filepath.Join(btcutil.AppDataDir("btcd", false), "logs")
+	initLogRotator(filepath.Join(defaultLogDir, "rehandle.log"))
+	backendLogger := btclog.NewBackend(logWriter{})
 	defer os.Stdout.Sync()
 	log = backendLogger.Logger("MAIN")
 	dbLog := backendLogger.Logger("BCDB")
@@ -88,6 +123,10 @@ func realMain() error {
 	parser.AddCommand("fetchblockregion",
 		"Fetch the specified block region from the database", "",
 		&blockRegionCfg)
+
+	parser.AddCommand("rehandleblocks",
+		"Rehandle with all block in the database", "",
+		&rehandleBlocksCfg)
 
 	// Parse command line and invoke the Execute function for the specified
 	// command.

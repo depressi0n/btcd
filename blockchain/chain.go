@@ -1240,8 +1240,9 @@ func (b *BlockChain) isCurrent() bool {
 	//
 	// The chain appears to be current if none of the checks reported
 	// otherwise.
-	minus24Hours := b.timeSource.AdjustedTime().Add(-24 * time.Hour).Unix()
-	return b.bestChain.Tip().timestamp >= minus24Hours
+	//minus24Hours := b.timeSource.AdjustedTime().Add(-24 * time.Hour).Unix()
+	//return b.bestChain.Tip().timestamp >= minus24Hours
+	return true
 }
 
 // IsCurrent returns whether or not the chain believes it is current.  Several
@@ -1759,6 +1760,94 @@ func New(config *Config) (*BlockChain, error) {
 		db:                  config.DB,
 		chainParams:         params,
 		timeSource:          config.TimeSource,
+		sigCache:            config.SigCache,
+		indexManager:        config.IndexManager,
+		minRetargetTimespan: targetTimespan / adjustmentFactor,
+		maxRetargetTimespan: targetTimespan * adjustmentFactor,
+		blocksPerRetarget:   int32(targetTimespan / targetTimePerBlock),
+		index:               newBlockIndex(config.DB, params),
+		hashCache:           config.HashCache,
+		bestChain:           newChainView(nil),
+		orphans:             make(map[chainhash.Hash]*orphanBlock),
+		prevOrphans:         make(map[chainhash.Hash][]*orphanBlock),
+		warningCaches:       newThresholdCaches(vbNumBits),
+		deploymentCaches:    newThresholdCaches(chaincfg.DefinedDeployments),
+	}
+
+	// Initialize the chain state from the passed database.  When the db
+	// does not yet contain any chain state, both it and the chain state
+	// will be initialized to contain only the genesis block.
+	if err := b.initChainState(); err != nil {
+		return nil, err
+	}
+
+	// Perform any upgrades to the various chain-specific buckets as needed.
+	if err := b.maybeUpgradeDbBuckets(config.Interrupt); err != nil {
+		return nil, err
+	}
+
+	// Initialize and catch up all of the currently active optional indexes
+	// as needed.
+	if config.IndexManager != nil {
+		err := config.IndexManager.Init(&b, config.Interrupt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Initialize rule change threshold state caches.
+	if err := b.initThresholdCaches(); err != nil {
+		return nil, err
+	}
+
+	bestNode := b.bestChain.Tip()
+	log.Infof("Chain state (height %d, hash %v, totaltx %d, work %v)",
+		bestNode.height, bestNode.hash, b.stateSnapshot.TotalTxns,
+		bestNode.workSum)
+
+	return &b, nil
+}
+
+func NewTest(config *Config) (*BlockChain, error) {
+	// Enforce required config fields.
+	if config.DB == nil {
+		return nil, AssertError("blockchain.New database is nil")
+	}
+	if config.ChainParams == nil {
+		return nil, AssertError("blockchain.New chain parameters nil")
+	}
+	if config.TimeSource == nil {
+		return nil, AssertError("blockchain.New timesource is nil")
+	}
+
+	// Generate a checkpoint by height map from the provided checkpoints
+	// and assert the provided checkpoints are sorted by height as required.
+	var checkpointsByHeight map[int32]*chaincfg.Checkpoint
+	var prevCheckpointHeight int32
+	if len(config.Checkpoints) > 0 {
+		checkpointsByHeight = make(map[int32]*chaincfg.Checkpoint)
+		for i := range config.Checkpoints {
+			checkpoint := &config.Checkpoints[i]
+			if checkpoint.Height <= prevCheckpointHeight {
+				return nil, AssertError("blockchain.New " +
+					"checkpoints are not sorted by height")
+			}
+
+			checkpointsByHeight[checkpoint.Height] = checkpoint
+			prevCheckpointHeight = checkpoint.Height
+		}
+	}
+
+	params := config.ChainParams
+	targetTimespan := int64(params.TargetTimespan / time.Second)
+	targetTimePerBlock := int64(params.TargetTimePerBlock / time.Second)
+	adjustmentFactor := params.RetargetAdjustmentFactor
+	b := BlockChain{
+		checkpoints:         config.Checkpoints,
+		checkpointsByHeight: checkpointsByHeight,
+		db:                  config.DB,
+		chainParams:         params,
+		timeSource:          nil,
 		sigCache:            config.SigCache,
 		indexManager:        config.IndexManager,
 		minRetargetTimespan: targetTimespan / adjustmentFactor,
